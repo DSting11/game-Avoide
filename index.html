@@ -1,3 +1,5 @@
+[file name]: index.html
+[file content begin]
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -23,6 +25,12 @@
     <audio id="sfxClick" preload="auto">
         <source src="assets/audio/sfx/click.mp3" type="audio/mpeg">
     </audio>
+    <audio id="sfxLaser" preload="auto">
+        <source src="assets/audio/sfx/laser.mp3" type="audio/mpeg">
+    </audio>
+    <audio id="sfxLaserWarning" preload="auto">
+        <source src="assets/audio/sfx/laser_warning.mp3" type="audio/mpeg">
+    </audio>
 
     <style>
         :root {
@@ -31,8 +39,11 @@
             --color-dim: #666666;
             --color-success: #00ff00;
             --color-danger: #ff0000;
+            --player-color: #ffffcc; /* Kuning muda */
+            --player-glow: rgba(255, 255, 204, 0.8); /* Glow kuning muda */
+            --player-outline: #000000;
             --joystick-bg: rgba(255, 255, 255, 0.15);
-            --joystick-handle: rgba(255, 255, 255, 0.95);
+            --joystick-handle: rgba(255, 255, 204, 0.95); /* Kuning muda */
             --boost-btn-bg: rgba(255, 255, 255, 0.2);
             --safe-top: env(safe-area-inset-top, 0px);
             --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -587,8 +598,8 @@
         }
 
         .joystick-handle.active {
-            background: rgba(255,255,255,1);
-            box-shadow: 0 0 20px rgba(255,255,255,0.8);
+            background: rgba(255,255,204,1); /* Kuning muda */
+            box-shadow: 0 0 20px rgba(255,255,204,0.8);
         }
 
         .boost-button {
@@ -1285,9 +1296,9 @@
                 INVINCIBILITY_FRAMES: 60,
                 DAMAGE_COOLDOWN: 1000,
                 TRAIL_LENGTH: 15,
-                COLOR: '#ffffff',
+                COLOR: '#ffffcc', // Kuning muda
                 OUTLINE_COLOR: '#000000',
-                GLOW_COLOR: 'rgba(255,255,255,0.8)'
+                GLOW_COLOR: 'rgba(255, 255, 204, 0.8)' // Glow kuning muda
             },
             BLOCK: {
                 SPAWN_RATE: 5,
@@ -1337,7 +1348,7 @@
             COLORS: {
                 BACKGROUND: '#000000',
                 GRID: 'rgba(255, 255, 255, 0.05)',
-                PLAYER: '#ffffff',
+                PLAYER: '#ffffcc', // Kuning muda
                 PLAYER_OUTLINE: '#000000',
                 PLAYER_EYE: '#000000',
                 ENEMY_GLOW: 'rgba(255,255,255,0.5)'
@@ -1397,7 +1408,10 @@
                 this.isMuted = false;
                 this.transitioning = false;
                 this.sfxClick = document.getElementById('sfxClick');
+                this.sfxLaser = document.getElementById('sfxLaser');
+                this.sfxLaserWarning = document.getElementById('sfxLaserWarning');
                 this.audioContextAllowed = false;
+                this.hasUserInteraction = false;
             }
             
             init() { 
@@ -1406,6 +1420,30 @@
                 } catch(e) {} 
                 [this.bgmMenu, this.bgmNormal, this.bgmBoss].forEach(bgm => {
                     if(bgm) bgm.volume = 0;
+                });
+                
+                // Setup user interaction untuk mengaktifkan audio
+                const enableAudio = () => {
+                    this.hasUserInteraction = true;
+                    this.resumeAudioContext();
+                    
+                    // Coba play audio dengan volume 0 untuk mengaktifkan
+                    if (this.bgmMenu) {
+                        this.bgmMenu.volume = 0.1;
+                        const playPromise = this.bgmMenu.play();
+                        if (playPromise) {
+                            playPromise.then(() => {
+                                this.bgmMenu.pause();
+                                this.bgmMenu.currentTime = 0;
+                                this.bgmMenu.volume = this.bgmVolume;
+                            }).catch(e => {});
+                        }
+                    }
+                };
+                
+                // Event listener untuk interaksi pertama
+                ['click', 'touchstart', 'keydown'].forEach(event => {
+                    document.addEventListener(event, enableAudio, { once: true });
                 });
             }
             
@@ -1417,7 +1455,7 @@
             }
             
             switchBGM(targetType) {
-                if(this.isMuted || this.transitioning) return;
+                if(this.isMuted || this.transitioning || !this.hasUserInteraction) return;
                 this.resumeAudioContext();
                 const targetMap = {
                     'menu': this.bgmMenu,
@@ -1462,13 +1500,23 @@
                     if(bgm) {
                         bgm.pause();
                         bgm.currentTime = 0;
+                        bgm.volume = 0;
                     }
                 });
                 this.currentBGM = null;
             }
             
+            stopCurrentBGM() {
+                if (this.currentBGM) {
+                    this.currentBGM.pause();
+                    this.currentBGM.currentTime = 0;
+                    this.currentBGM.volume = 0;
+                    this.currentBGM = null;
+                }
+            }
+            
             playClickSound() {
-                if(this.isMuted) return;
+                if(this.isMuted || !this.hasUserInteraction) return;
                 this.resumeAudioContext();
                 if(this.sfxClick) {
                     this.sfxClick.currentTime = 0;
@@ -1478,7 +1526,7 @@
             }
             
             playSound(type, freq, duration) {
-                if (!this.ctx || !this.enabled || this.isMuted) return;
+                if (!this.ctx || !this.enabled || this.isMuted || !this.hasUserInteraction) return;
                 this.resumeAudioContext();
                 const osc = this.ctx.createOscillator();
                 const gain = this.ctx.createGain();
@@ -1499,19 +1547,39 @@
                 if(this.isMuted) {
                     this.stopAllBGM();
                 } else {
+                    this.resumeAudioContext();
                     if(game.state === 'menu') this.switchBGM('menu');
                     else if(game.state === 'playing') this.switchBGM('normal');
                     else if(game.state === 'boss_fight' || game.state === 'boss_transition') this.switchBGM('boss');
                 }
             }
             
-            playLaserSpawn() { this.playSound('sawtooth', 800, 0.1); }
+            playLaserSpawn() { 
+                if(this.isMuted || !this.hasUserInteraction) return;
+                this.resumeAudioContext();
+                if(this.sfxLaser) {
+                    this.sfxLaser.currentTime = 0;
+                    this.sfxLaser.volume = this.sfxVolume * 0.7;
+                    this.sfxLaser.play().catch(e => {});
+                }
+            }
+            
+            playLaserWarning() { 
+                if(this.isMuted || !this.hasUserInteraction) return;
+                this.resumeAudioContext();
+                if(this.sfxLaserWarning) {
+                    this.sfxLaserWarning.currentTime = 0;
+                    this.sfxLaserWarning.volume = this.sfxVolume * 0.5;
+                    this.sfxLaserWarning.play().catch(e => {});
+                }
+            }
+            
             playPlayerHit() { this.playSound('square', 100, 0.3); }
             playHealthPickup() { this.playSound('sine', 600, 0.3); }
             playButtonClick() { this.playClickSound(); }
             playBossAppear() { this.playSound('sawtooth', 150, 1); }
             playBoostActivate() { 
-                if(!this.ctx) return;
+                if(!this.ctx || !this.hasUserInteraction) return;
                 [523.25, 659.25, 783.99].forEach((f, i) => 
                     setTimeout(() => this.playSound('sine', f, 0.3), i*50)
                 );
@@ -1695,14 +1763,15 @@
             }
 
             draw(ctx) {
+                // Draw trail
                 this.trail.forEach((t,i) => {
                     ctx.save(); 
                     ctx.globalAlpha = t.alpha*0.5; 
                     ctx.fillStyle = (this.isBoostActive && this.selectedBoost === 'speed') 
-                        ? 'rgba(255,255,255,0.4)' 
-                        : 'rgba(255,255,255,0.2)';
+                        ? 'rgba(255,255,204,0.4)' // Kuning muda transparan
+                        : 'rgba(255,255,204,0.2)'; // Kuning muda lebih transparan
                     ctx.shadowBlur = 15;
-                    ctx.shadowColor = 'rgba(255,255,255,0.5)';
+                    ctx.shadowColor = 'rgba(255,255,204,0.5)';
                     ctx.beginPath(); 
                     ctx.arc(t.pos.x, t.pos.y, this.size*0.5*(i/this.trail.length), 0, Math.PI*2); 
                     ctx.fill(); 
@@ -1718,30 +1787,31 @@
                 
                 if(this.isBoostActive && this.selectedBoost === 'invincible') {
                     ctx.shadowBlur = 30; 
-                    ctx.shadowColor = 'rgba(255,255,255,0.9)';
-                    ctx.strokeStyle = '#ffffff'; 
+                    ctx.shadowColor = 'rgba(255,255,204,0.9)';
+                    ctx.strokeStyle = CONFIG.PLAYER.COLOR; 
                     ctx.lineWidth = 3;
                     ctx.beginPath(); 
                     ctx.arc(0,0,this.size*0.8,0,Math.PI*2); 
                     ctx.stroke();
                 } else if(this.isBoostActive && this.selectedBoost === 'speed') {
                     ctx.shadowBlur = 25; 
-                    ctx.shadowColor = 'rgba(255,255,255,0.8)';
+                    ctx.shadowColor = CONFIG.PLAYER.GLOW_COLOR;
                 } else {
                     ctx.shadowBlur = 20;
-                    ctx.shadowColor = 'rgba(255,255,255,0.6)';
+                    ctx.shadowColor = CONFIG.PLAYER.GLOW_COLOR;
                 }
 
-                ctx.fillStyle = '#ffffff';
+                ctx.fillStyle = CONFIG.PLAYER.COLOR;
                 ctx.beginPath(); 
                 ctx.arc(0,0,this.size/2,0,Math.PI*2); 
                 ctx.fill();
                 
                 ctx.lineWidth = 3;
-                ctx.strokeStyle = '#000000';
+                ctx.strokeStyle = CONFIG.PLAYER.OUTLINE_COLOR;
                 ctx.stroke();
 
-                ctx.fillStyle = '#000000';
+                // Eyes
+                ctx.fillStyle = CONFIG.PLAYER.OUTLINE_COLOR;
                 ctx.shadowBlur = 0;
                 ctx.beginPath(); 
                 ctx.arc(-6,-4,5,0,Math.PI*2); 
@@ -1750,7 +1820,8 @@
                 ctx.arc(6,-4,5,0,Math.PI*2); 
                 ctx.fill();
                 
-                ctx.fillStyle = '#ffffff';
+                // Eye highlights
+                ctx.fillStyle = CONFIG.PLAYER.COLOR;
                 ctx.beginPath(); 
                 ctx.arc(-6,-4,1.5,0,Math.PI*2); 
                 ctx.fill();
@@ -1818,6 +1889,7 @@
                 this.state='warning'; 
                 this.timer=0; 
                 this.telegraphLength=0; 
+                this.warningSoundPlayed = false;
             }
             spawnAtPlayer(playerPos, angle=0) { 
                 this.pos=playerPos.copy(); 
@@ -1829,6 +1901,13 @@
                 this.timer=CONFIG.LASER.TELEGRAPH_FRAMES; 
                 this.length = Math.max(window.innerWidth, window.innerHeight) * CONFIG.LASER.LENGTH_MULTIPLIER;
                 this.telegraphLength=this.length; 
+                this.warningSoundPlayed = false;
+                
+                // Play laser warning sound
+                if (!this.warningSoundPlayed) {
+                    game.audio.playLaserWarning();
+                    this.warningSoundPlayed = true;
+                }
             }
             update() { 
                 if(!this.active) return; 
@@ -1929,6 +2008,7 @@
                 this.direction=new Vector2(0,0); 
                 this.startPos=new Vector2(0,0); 
                 this.targetPos=new Vector2(0,0); 
+                this.warningSoundPlayed = false;
             }
             spawn(targetPos) {
                 const side=Utils.randomInt(0,3); 
@@ -1947,6 +2027,13 @@
                 this.alpha=1; 
                 this.state='warning'; 
                 this.timer=CONFIG.PROJECTILE_LASER.WARNING_DURATION/16;
+                this.warningSoundPlayed = false;
+                
+                // Play laser warning sound
+                if (!this.warningSoundPlayed) {
+                    game.audio.playLaserWarning();
+                    this.warningSoundPlayed = true;
+                }
             }
             initialize() {}
             update(canvasWidth,canvasHeight) { 
@@ -3169,12 +3256,16 @@
                 if (this.isMobile) {
                     this.elements.mobileControls.classList.remove('active');
                 }
+                // Hentikan musik saat game over
+                game.audio.stopCurrentBGM();
             }
             showWin() { 
                 this.elements.winScreen.classList.add('active'); 
                 if (this.isMobile) {
                     this.elements.mobileControls.classList.remove('active');
                 }
+                // Hentikan musik saat win
+                game.audio.stopCurrentBGM();
             }
             showPause() {
                 if (this.elements.pauseOverlay) {
@@ -3335,7 +3426,7 @@
                         this.particles.spawnTrail(
                             this.player.pos.x+Utils.randomRange(-5,5),
                             this.player.pos.y+Utils.randomRange(-5,5),
-                            'rgba(255,255,255,0.3)'
+                            'rgba(255,255,204,0.3)' // Kuning muda transparan
                         ); 
                 } 
                 this.spawner.checkCollisions(this.player); 
@@ -3383,3 +3474,4 @@
     </script>
 </body>
 </html>
+[file content end]
